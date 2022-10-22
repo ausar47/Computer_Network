@@ -49,7 +49,7 @@ void NetworkInterface::send_datagram(const InternetDatagram &dgram, const Addres
         eth_frame.payload() = arp_request.serialize();
         _frames_out.push(eth_frame);
         // IPv4 datagram begins waiting for ARP request
-        _dgram_waiting_list.push_back({next_hop, dgram});
+        _dgram_waiting_list.emplace_back(next_hop, dgram);
     }
     // case found, encapsulate in an Ethernet frame and push the frame onto the frames_out queue
     else {
@@ -66,8 +66,58 @@ void NetworkInterface::send_datagram(const InternetDatagram &dgram, const Addres
 
 //! \param[in] frame the incoming Ethernet frame
 optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &frame) {
-    DUMMY_CODE(frame);
-    return {};
+    // filter irrelevant package
+    if (frame.header().dst != _ethernet_address && frame.header().dst != ETHERNET_BROADCAST) {
+        return nullopt;
+    }
+    // IPv4 frame
+    if (frame.header().type == EthernetHeader::TYPE_IPv4) {
+        InternetDatagram dgram;
+        // parse fail
+        if (dgram.parse(frame.payload()) != ParseResult::NoError) {
+            return nullopt;
+        }
+        return dgram;
+    }
+    // ARP frame
+    else if (frame.header().type == EthernetHeader::TYPE_ARP) {
+        ARPMessage arp_msg;
+        // parse fail
+        if (arp_msg.parse(frame.payload()) != ParseResult::NoError) {
+            return nullopt;
+        }
+
+        // add to ARP table for 30 seconds
+        _arp_table[arp_msg.sender_ip_address] = {arp_msg.sender_ethernet_address, ARP_Table_Default_TTL};
+        // remove corresponding IPv4 datagram from the waiting list and send it
+        for (auto iter = _dgram_waiting_list.begin(); iter != _dgram_waiting_list.end(); ) {
+            if (iter->first.ipv4_numeric() == arp_msg.sender_ip_address) {
+                send_datagram(iter->second, iter->first);
+                iter = _dgram_waiting_list.erase(iter);
+            }
+            else {
+                iter++;
+            }
+        }
+
+        // case ARP request, ONLY IF IP ADDRESS FITS
+        bool is_arp_request = arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == _ip_address.ipv4_numeric();
+        if (is_arp_request) {
+            ARPMessage arp_reply;
+            arp_reply.opcode = ARPMessage::OPCODE_REPLY;
+            arp_reply.sender_ethernet_address = _ethernet_address;
+            arp_reply.sender_ip_address = _ip_address.ipv4_numeric();
+            arp_reply.target_ethernet_address = arp_msg.sender_ethernet_address;
+            arp_reply.target_ip_address = arp_msg.sender_ip_address;
+            EthernetFrame eth_frame;
+            eth_frame.header() = {/* dst  */ arp_msg.sender_ethernet_address,
+                                  /* src  */ _ethernet_address,
+                                  /* type */ EthernetHeader::TYPE_ARP};
+            eth_frame.payload() = arp_reply.serialize();
+            _frames_out.push(eth_frame);
+        }
+    }
+    return nullopt;
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
