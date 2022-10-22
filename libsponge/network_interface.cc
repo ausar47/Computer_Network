@@ -44,9 +44,11 @@ void NetworkInterface::send_datagram(const InternetDatagram &dgram, const Addres
             arp_request.sender_ip_address = _ip_address.ipv4_numeric();
             arp_request.target_ip_address = next_hop_ip;
             EthernetFrame eth_frame;
-            eth_frame.header() = {/* dst  */ ETHERNET_BROADCAST,
-                                  /* src  */ _ethernet_address,
-                                  /* type */ EthernetHeader::TYPE_ARP};
+            eth_frame.header() = {
+                ETHERNET_BROADCAST,
+                _ethernet_address,
+                EthernetHeader::TYPE_ARP
+            };
             eth_frame.payload() = arp_request.serialize();
             _frames_out.push(eth_frame);
             _arp_msg_list[next_hop_ip] = ARP_MESSAGE_DEFAULT_TTL;
