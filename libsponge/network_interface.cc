@@ -32,8 +32,36 @@ NetworkInterface::NetworkInterface(const EthernetAddress &ethernet_address, cons
 void NetworkInterface::send_datagram(const InternetDatagram &dgram, const Address &next_hop) {
     // convert IP address of next hop to raw 32-bit representation (used in ARP header)
     const uint32_t next_hop_ip = next_hop.ipv4_numeric();
-
-    DUMMY_CODE(dgram, next_hop, next_hop_ip);
+    // look up the Ethernet destination address for the next hop
+    const auto arp_iter = _arp_table.find(next_hop_ip);
+    // case not found
+    if (arp_iter == _arp_table.end()) {
+        // broadcast an ARPMessage to get the address for the next hop
+        ARPMessage arp_request;
+        arp_request.opcode = ARPMessage::OPCODE_REQUEST;
+        arp_request.sender_ethernet_address = _ethernet_address;
+        arp_request.sender_ip_address = _ip_address.ipv4_numeric();
+        arp_request.target_ip_address = next_hop_ip;
+        EthernetFrame eth_frame;
+        eth_frame.header() = {/* dst  */ ETHERNET_BROADCAST,
+                              /* src  */ _ethernet_address,
+                              /* type */ EthernetHeader::TYPE_ARP};
+        eth_frame.payload() = arp_request.serialize();
+        _frames_out.push(eth_frame);
+        // IPv4 datagram begins waiting for ARP request
+        _dgram_waiting_list.push_back({next_hop, dgram});
+    }
+    // case found, encapsulate in an Ethernet frame and push the frame onto the frames_out queue
+    else {
+        EthernetFrame eth_frame;
+        eth_frame.header() = {
+            arp_iter->second.eth_addr,
+            _ethernet_address,
+            EthernetHeader::TYPE_IPv4
+        };
+        eth_frame.payload() = dgram.serialize();
+        _frames_out.push(eth_frame);
+    }
 }
 
 //! \param[in] frame the incoming Ethernet frame
