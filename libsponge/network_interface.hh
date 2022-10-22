@@ -70,6 +70,7 @@ class NetworkInterface {
     //! \brief Access queue of Ethernet frames awaiting transmission
     std::queue<EthernetFrame> &frames_out() { return _frames_out; }
 
+
     //! \brief Sends an IPv4 datagram, encapsulated in an Ethernet frame (if it knows the Ethernet destination address).
 
     //! Will need to use [ARP](\ref rfc::rfc826) to look up the Ethernet destination address for the next hop

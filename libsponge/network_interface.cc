@@ -110,6 +110,7 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
             _frames_out.push(eth_frame);
         }
 
+
         // only REQUEST with UNFIT TARGET IP ADDRESS is rejected by this if
         if (is_valid_arp_request || arp_msg.opcode == ARPMessage::OPCODE_REPLY) {
             // learn a mapping, add it to ARP table for 30 seconds
