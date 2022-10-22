@@ -11,7 +11,9 @@
 class ByteStream {
   private:
     // Your code here -- add private members as necessary.
-
+    std::string byte_stream = "";
+    size_t length = 0, byteswritten = 0, bytesread = 0;
+    bool is_end = false;
     // Hint: This doesn't need to be a sophisticated data structure at
     // all, but if any of your tests are taking longer than a second,
     // that's a sign that you probably want to keep exploring
