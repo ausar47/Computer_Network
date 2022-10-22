@@ -87,22 +87,10 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
             return nullopt;
         }
 
-        // add to ARP table for 30 seconds
-        _arp_table[arp_msg.sender_ip_address] = {arp_msg.sender_ethernet_address, ARP_Table_Default_TTL};
-        // remove corresponding IPv4 datagram from the waiting list and send it
-        for (auto iter = _dgram_waiting_list.begin(); iter != _dgram_waiting_list.end(); ) {
-            if (iter->first.ipv4_numeric() == arp_msg.sender_ip_address) {
-                send_datagram(iter->second, iter->first);
-                iter = _dgram_waiting_list.erase(iter);
-            }
-            else {
-                iter++;
-            }
-        }
-
-        // case ARP request, ONLY IF IP ADDRESS FITS
+        // case ARP request, ONLY IF TARGET IP ADDRESS FITS
         bool is_arp_request = arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == _ip_address.ipv4_numeric();
         if (is_arp_request) {
+            // reply is sent back only to the source
             ARPMessage arp_reply;
             arp_reply.opcode = ARPMessage::OPCODE_REPLY;
             arp_reply.sender_ethernet_address = _ethernet_address;
@@ -115,6 +103,22 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
                                   /* type */ EthernetHeader::TYPE_ARP};
             eth_frame.payload() = arp_reply.serialize();
             _frames_out.push(eth_frame);
+        }
+
+        // only REQUEST with UNFIT TARGET IP ADDRESS is rejected by this if
+        if (is_arp_request || arp_msg.opcode == ARPMessage::OPCODE_REPLY) {
+            // learn a mapping, add it to ARP table for 30 seconds
+            _arp_table[arp_msg.sender_ip_address] = {arp_msg.sender_ethernet_address, ARP_Table_Default_TTL};
+            // remove corresponding IPv4 datagram from the waiting list and send it
+            for (auto iter = _dgram_waiting_list.begin(); iter != _dgram_waiting_list.end(); ) {
+                if (iter->first.ipv4_numeric() == arp_msg.sender_ip_address) {
+                    send_datagram(iter->second, iter->first);
+                    iter = _dgram_waiting_list.erase(iter);
+                }
+                else {
+                    iter++;
+                }
+            }
         }
     }
     return nullopt;
