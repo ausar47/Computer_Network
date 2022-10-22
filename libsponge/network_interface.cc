@@ -36,18 +36,21 @@ void NetworkInterface::send_datagram(const InternetDatagram &dgram, const Addres
     const auto arp_iter = _arp_table.find(next_hop_ip);
     // case not found
     if (arp_iter == _arp_table.end()) {
-        // broadcast an ARPMessage to get the address for the next hop
-        ARPMessage arp_request;
-        arp_request.opcode = ARPMessage::OPCODE_REQUEST;
-        arp_request.sender_ethernet_address = _ethernet_address;
-        arp_request.sender_ip_address = _ip_address.ipv4_numeric();
-        arp_request.target_ip_address = next_hop_ip;
-        EthernetFrame eth_frame;
-        eth_frame.header() = {/* dst  */ ETHERNET_BROADCAST,
-                              /* src  */ _ethernet_address,
-                              /* type */ EthernetHeader::TYPE_ARP};
-        eth_frame.payload() = arp_request.serialize();
-        _frames_out.push(eth_frame);
+        // broadcast an ARPMessage to get the address for the next hop if no same ARPMessage has been sent in the last 5 seconds
+        if (_arp_msg_list.find(next_hop_ip) == _arp_msg_list.end()) {
+            ARPMessage arp_request;
+            arp_request.opcode = ARPMessage::OPCODE_REQUEST;
+            arp_request.sender_ethernet_address = _ethernet_address;
+            arp_request.sender_ip_address = _ip_address.ipv4_numeric();
+            arp_request.target_ip_address = next_hop_ip;
+            EthernetFrame eth_frame;
+            eth_frame.header() = {/* dst  */ ETHERNET_BROADCAST,
+                                  /* src  */ _ethernet_address,
+                                  /* type */ EthernetHeader::TYPE_ARP};
+            eth_frame.payload() = arp_request.serialize();
+            _frames_out.push(eth_frame);
+            _arp_msg_list[next_hop_ip] = ARP_MESSAGE_DEFAULT_TTL;
+        }
         // IPv4 datagram begins waiting for ARP request
         _dgram_waiting_list.emplace_back(next_hop, dgram);
     }
@@ -88,8 +91,8 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
         }
 
         // case ARP request, ONLY IF TARGET IP ADDRESS FITS
-        bool is_arp_request = arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == _ip_address.ipv4_numeric();
-        if (is_arp_request) {
+        bool is_valid_arp_request = arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == _ip_address.ipv4_numeric();
+        if (is_valid_arp_request) {
             // reply is sent back only to the source
             ARPMessage arp_reply;
             arp_reply.opcode = ARPMessage::OPCODE_REPLY;
@@ -106,9 +109,9 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
         }
 
         // only REQUEST with UNFIT TARGET IP ADDRESS is rejected by this if
-        if (is_arp_request || arp_msg.opcode == ARPMessage::OPCODE_REPLY) {
+        if (is_valid_arp_request || arp_msg.opcode == ARPMessage::OPCODE_REPLY) {
             // learn a mapping, add it to ARP table for 30 seconds
-            _arp_table[arp_msg.sender_ip_address] = {arp_msg.sender_ethernet_address, ARP_Table_Default_TTL};
+            _arp_table[arp_msg.sender_ip_address] = {arp_msg.sender_ethernet_address, ARP_TABLE_DEFAULT_TTL};
             // remove corresponding IPv4 datagram from the waiting list and send it
             for (auto iter = _dgram_waiting_list.begin(); iter != _dgram_waiting_list.end(); ) {
                 if (iter->first.ipv4_numeric() == arp_msg.sender_ip_address) {
@@ -119,10 +122,47 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
                     iter++;
                 }
             }
+            // got the reply, erase corresponding ARPMessage in the list if exists
+            _arp_msg_list.erase(arp_msg.sender_ip_address);
         }
     }
     return nullopt;
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
-void NetworkInterface::tick(const size_t ms_since_last_tick) { DUMMY_CODE(ms_since_last_tick); }
+void NetworkInterface::tick(const size_t ms_since_last_tick) {
+    // erase outdated tuples from ARP table
+    for (auto iter = _arp_table.begin(); iter != _arp_table.end(); ) {
+        if (iter->second.ttl <= ms_since_last_tick)
+            iter = _arp_table.erase(iter);
+        else {
+            iter->second.ttl -= ms_since_last_tick;
+            ++iter;
+        }
+    }
+    for (auto iter = _arp_msg_list.begin(); iter != _arp_msg_list.end(); ) {
+        // case ARPMessage outdated
+        if (iter->second <= ms_since_last_tick) {
+            // resend ARPMessage
+            ARPMessage arp_request;
+            arp_request.opcode = ARPMessage::OPCODE_REQUEST;
+            arp_request.sender_ethernet_address = _ethernet_address;
+            arp_request.sender_ip_address = _ip_address.ipv4_numeric();
+            arp_request.target_ip_address = iter->first;
+            EthernetFrame eth_frame;
+            eth_frame.header() = {
+                ETHERNET_BROADCAST,
+                _ethernet_address,
+                EthernetHeader::TYPE_ARP
+            };
+            eth_frame.payload() = arp_request.serialize();
+            _frames_out.push(eth_frame);
+            // reset timer
+            iter->second = ARP_MESSAGE_DEFAULT_TTL;
+        }
+        else {
+            iter->second -= ms_since_last_tick;
+            iter++;
+        }
+    }
+}

@@ -43,10 +43,16 @@ class NetworkInterface {
     std::map<uint32_t, ARP_Entry> _arp_table{};
 
     //! ARP table default ttl is 30 seconds
-    static constexpr size_t ARP_Table_Default_TTL = 30 * 1000;
+    static constexpr size_t ARP_TABLE_DEFAULT_TTL = 30 * 1000;
 
     //! IPv4 datagram waiting list
-    std::list<std::pair<Address, InternetDatagram>> _dgram_waiting_list;
+    std::list<std::pair<Address, InternetDatagram>> _dgram_waiting_list{};
+
+    //! ARPMessages already sent, each symbolized by its identical target ip address
+    std::map<uint32_t, size_t> _arp_msg_list{};
+
+    // ARPMessage default ttl is 5 seconds
+    static constexpr size_t ARP_MESSAGE_DEFAULT_TTL = 5 * 1000;
 
     //! Ethernet (known as hardware, network-access-layer, or link-layer) address of the interface
     EthernetAddress _ethernet_address;
