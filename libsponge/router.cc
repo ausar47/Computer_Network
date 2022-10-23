@@ -29,14 +29,33 @@ void Router::add_route(const uint32_t route_prefix,
     cerr << "DEBUG: adding route " << Address::from_ipv4_numeric(route_prefix).ip() << "/" << int(prefix_length)
          << " => " << (next_hop.has_value() ? next_hop->ip() : "(direct)") << " on interface " << interface_num << "\n";
 
-    DUMMY_CODE(route_prefix, prefix_length, next_hop, interface_num);
     // Your code here.
+    _routing_table.push_back({route_prefix, prefix_length, next_hop, interface_num});
 }
 
 //! \param[in] dgram The datagram to be routed
 void Router::route_one_datagram(InternetDatagram &dgram) {
-    DUMMY_CODE(dgram);
     // Your code here.
+    const uint32_t dst_addr = dgram.header().dst;
+    auto max_matched_entry = _routing_table.end();
+    // find the longest-prefix-match route
+    for (auto entry_iter = _routing_table.begin(); entry_iter != _routing_table.end(); entry_iter++) {
+        if (entry_iter->route_prefix == 0 || (entry_iter->route_prefix ^ dst_addr) >> (32 - entry_iter->prefix_length) == 0) {
+            if (max_matched_entry->prefix_length < entry_iter->prefix_length || max_matched_entry == _routing_table.end()) {
+                max_matched_entry = entry_iter;
+            }
+        }
+    }
+    // decrease TTL, send modified datagram on the appropriate interface to the appropriate next hop if datagram is still alive
+    if (dgram.header().ttl-- > 1 && max_matched_entry != _routing_table.end()) {
+        if (max_matched_entry->next_hop.has_value()) {
+            interface(max_matched_entry->interface_num).send_datagram(dgram, max_matched_entry->next_hop.value());
+        }
+        else {
+            interface(max_matched_entry->interface_num).send_datagram(dgram, Address::from_ipv4_numeric(dgram.header().dst));
+        }
+    }
+    // otherwise do nothing to drop the datagram
 }
 
 void Router::route() {
