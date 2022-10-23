@@ -103,9 +103,11 @@ optional<InternetDatagram> NetworkInterface::recv_frame(const EthernetFrame &fra
             arp_reply.target_ethernet_address = arp_msg.sender_ethernet_address;
             arp_reply.target_ip_address = arp_msg.sender_ip_address;
             EthernetFrame eth_frame;
-            eth_frame.header() = {/* dst  */ arp_msg.sender_ethernet_address,
-                                  /* src  */ _ethernet_address,
-                                  /* type */ EthernetHeader::TYPE_ARP};
+            eth_frame.header() = {
+                arp_msg.sender_ethernet_address,
+                _ethernet_address,
+                EthernetHeader::TYPE_ARP
+            };
             eth_frame.payload() = arp_reply.serialize();
             _frames_out.push(eth_frame);
         }
