@@ -18,8 +18,8 @@ using namespace std;
 //! \param[in] retx_timeout the initial amount of time to wait before retransmitting the oldest outstanding segment
 //! \param[in] fixed_isn the Initial Sequence Number to use, if set (otherwise uses a random ISN)
 TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const std::optional<WrappingInt32> fixed_isn)
-    : _isn(fixed_isn.value_or(WrappingInt32{random_device()()}))
-    , _initial_retransmission_timeout{retx_timeout}
+    : _isn(fixed_isn.value_or(WrappingInt32{ random_device()() }))
+    , _initial_retransmission_timeout{ retx_timeout }
     , _stream(capacity) {
     _retransmission_timeout = _initial_retransmission_timeout;
 }
@@ -81,7 +81,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // 检查未完成的段集合
     for (auto iter = _segments_in_flight.begin(); iter != _segments_in_flight.end(); /* nop */) {
         // 删除任何现在已被完全确认的段
-        const TCPSegment &seg = iter->second;
+        const TCPSegment& seg = iter->second;
         if (iter->first + seg.length_in_sequence_space() <= absolute_seqno) {
             _bytes_in_flight -= seg.length_in_sequence_space();
             iter = _segments_in_flight.erase(iter);
@@ -102,7 +102,6 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         else
             break;
     }
-    // 填充后面的数据
     _window_size = window_size;
     //  fill the window again if new space has opened up
     fill_window();
