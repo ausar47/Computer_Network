@@ -7,8 +7,8 @@
 #include "wrapping_integers.hh"
 
 #include <functional>
-#include <queue>
 #include <map>
+#include <queue>
 
 //! \brief The "sender" part of a TCP implementation.
 
@@ -17,25 +17,17 @@
 //! maintains the Retransmission Timer, and retransmits in-flight
 //! segments if the retransmission timer expires.
 class TCPSender {
-  private:
-    // RTO
-    unsigned int _retransmission_timeout{0};
+private:
+    int _timeout{-1};
+    int _timecount{0};
 
-    // 重传计时器
-    size_t _retransmission_timer{0};
+    std::map<size_t, TCPSegment> _outgoing_map{};
+    size_t _outgoing_bytes{0};
 
-    // 未被确认的段
-    std::map<size_t, TCPSegment> _segments_in_flight{};
-    size_t _bytes_in_flight{0};
-
-    // 窗口大小
-    size_t _window_size{1};
-
+    size_t _last_window_size{1};
     bool _set_syn_flag{false};
     bool _set_fin_flag{false};
-
-    // 连续重传的数量
-    unsigned int _consecutive_retransmissions_count{0};
+    size_t _consecutive_retransmissions_count{0};
 
     //! our initial sequence number, the number for our SYN.
     WrappingInt32 _isn;
@@ -52,7 +44,7 @@ class TCPSender {
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
 
-  public:
+public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
               const uint16_t retx_timeout = TCPConfig::TIMEOUT_DFLT,
